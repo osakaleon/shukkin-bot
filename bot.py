@@ -1,14 +1,19 @@
 import json, os, re, time, urllib.request
+from datetime import datetime, timezone, timedelta
 
 API_URL = "https://information-b.vercel.app/api/memo"
 WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
+ROSTER_WEBHOOK = os.environ.get("ROSTER_WEBHOOK_URL", "")
 STATE_FILE = "state.json"
+ROSTER_FILE = "roster.json"
 UA = {"User-Agent": "shukkin-bot/1.0"}
 DATE_RE = re.compile(r"^(\d{1,2}/\d{1,2})$")
 TIME_RE = re.compile(r"^(\d{1,2}時半?)〜$")
 CUP_RE = re.compile(r"[A-Z]")
 MARKS = "★○☆◎●"
 FULL = "🈵"
+JST = timezone(timedelta(hours=9))
+RANK = {"★": 0, "☆": 1, "○": 2}
 
 
 def get_json(url):
@@ -17,14 +22,14 @@ def get_json(url):
         return json.loads(r.read().decode("utf-8"))
 
 
-def post(text):
+def send(hook, text):
     chunk = ""
     for line in text.split("\n") + [None]:
         if line is None or len(chunk) + len(line) > 1900:
             if chunk.strip():
                 body = json.dumps({"content": chunk}).encode("utf-8")
                 headers = dict(UA, **{"Content-Type": "application/json"})
-                req = urllib.request.Request(WEBHOOK, data=body, headers=headers, method="POST")
+                req = urllib.request.Request(hook, data=body, headers=headers, method="POST")
                 urllib.request.urlopen(req, timeout=20)
             chunk = ""
         if line is not None:
@@ -93,6 +98,44 @@ def news(emoji, title, name):
     return f"{emoji} **【速報】{title}**\nキャスト名：{name}\n"
 
 
+def post_roster(roster):
+    def key(item):
+        n, r = item
+        return (RANK.get(r.get("mark", "")[:1], 3), -r.get("days", 0), n)
+    lines = [f"📋 **キャスト名簿**（全{len(roster)}名）\n"]
+    for n, r in sorted(roster.items(), key=key):
+        mark = r.get("mark", "")
+        lines.append(f"{mark}{n}（{r.get('spec', '')}）初:{r['first']}　最終:{r['last']}　{r['days']}日")
+    send(ROSTER_WEBHOOK, "\n".join(lines))
+
+
+def update_roster(date, members):
+    try:
+        with open(ROSTER_FILE, encoding="utf-8") as f:
+            roster = json.load(f)
+    except FileNotFoundError:
+        roster = {}
+    changed = False
+    for n, m in members.items():
+        if n not in roster:
+            roster[n] = {"first": date, "last": date, "days": 1,
+                         "mark": m.get("mark", ""), "spec": m["spec"]}
+            changed = True
+        else:
+            r = roster[n]
+            if r.get("mark") != m.get("mark", "") or r.get("spec") != m["spec"]:
+                changed = True
+            r["mark"], r["spec"] = m.get("mark", ""), m["spec"]
+            if r["last"] != date:
+                r["last"] = date
+                r["days"] = r.get("days", 1) + 1
+                changed = True
+    with open(ROSTER_FILE, "w", encoding="utf-8") as f:
+        json.dump(roster, f, ensure_ascii=False, indent=2)
+    if changed and ROSTER_WEBHOOK:
+        post_roster(roster)
+
+
 def main():
     data = get_json(API_URL)
     try:
@@ -105,6 +148,8 @@ def main():
     date, members = parse(data.get("content", ""))
     if date is None or not members:
         return
+    today = datetime.now(JST).strftime("%-m/%-d")
+    update_roster(today, members)
     old = state.get("members", {})
     msgs = []
     if date != state.get("date"):
@@ -126,7 +171,7 @@ def main():
             if n not in members:
                 msgs.append(news("⚠️", "出勤取り消し", n))
     if msgs:
-        post("\n".join(msgs))
+        send(WEBHOOK, "\n".join(msgs))
     state = {"updated_at": data.get("updated_at"), "date": date, "members": members}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
