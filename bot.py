@@ -6,7 +6,9 @@ STATE_FILE = "state.json"
 UA = {"User-Agent": "shukkin-bot/1.0"}
 DATE_RE = re.compile(r"^(\d{1,2}/\d{1,2})$")
 TIME_RE = re.compile(r"^(\d{1,2}時半?)〜$")
+CUP_RE = re.compile(r"[A-Z]")
 MARKS = "★○☆◎●"
+FULL = "🈵"
 
 
 def get_json(url):
@@ -48,15 +50,27 @@ def parse(content):
             continue
         tokens = line.split()
         name = tokens[0].lstrip(MARKS)
+        mark = tokens[0][: len(tokens[0]) - len(name)]
         if len(tokens) >= 3 and tokens[1].isdigit() and name:
-            end = next((t for t in tokens[2:] if t.startswith("〜")), "")
-            spec = [tokens[1] + "cm"] + [t for t in tokens[2:] if re.fullmatch(r"[A-Z]", t)]
-            members[name] = {"start": start, "end": end.lstrip("〜"), "spec": " / ".join(spec)}
+            rest = tokens[2:]
+            end = next((t for t in rest if t.startswith("〜")), "")
+            spec = [tokens[1] + "cm"] + [t for t in rest if CUP_RE.fullmatch(t)]
+            tags = [t for t in rest if not t.startswith("〜") and not CUP_RE.fullmatch(t)]
+            members[name] = {
+                "start": start,
+                "end": end.lstrip("〜"),
+                "spec": " / ".join(spec),
+                "mark": mark,
+                "tags": " ".join(tags),
+            }
     return date, members
 
 
 def fmt(name, m):
-    return f"・{name}（{m['spec']}）{m['start']}〜{m['end']}"
+    s = f"・{m.get('mark', '')}{name}（{m['spec']}）{m['start']}〜{m['end']}"
+    if m.get("tags"):
+        s += " " + m["tags"]
+    return s
 
 
 def main():
@@ -80,6 +94,13 @@ def main():
         for n in members:
             if n not in old:
                 msgs.append("🚨 新規出勤エントリー\n" + fmt(n, members[n]) + "\n")
+                continue
+            was = FULL in old[n].get("tags", "")
+            now = FULL in members[n].get("tags", "")
+            if now and not was:
+                msgs.append("🈵 満枠になりました\n" + fmt(n, members[n]) + "\n")
+            elif was and not now:
+                msgs.append("🈳 満枠が解除されました\n" + fmt(n, members[n]) + "\n")
         for n in old:
             if n not in members:
                 msgs.append("⚠️ 出勤リストから外れました\n" + fmt(n, old[n]) + "\n")
