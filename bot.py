@@ -98,14 +98,23 @@ def news(emoji, title, name):
     return f"{emoji} **【速報】{title}**\nキャスト名：{name}\n"
 
 
+def date_key(d):
+    try:
+        mm, dd = d.split("/")
+        return (int(mm), int(dd))
+    except Exception:
+        return (0, 0)
+
+
 def post_roster(roster):
     def key(item):
         n, r = item
-        return (RANK.get(r.get("mark", "")[:1], 3), -r.get("days", 0), n)
+        mm, dd = date_key(r.get("last", ""))
+        return (RANK.get(r.get("mark", "")[:1], 3), -mm, -dd, n)
     lines = [f"📋 **キャスト名簿**（全{len(roster)}名）\n"]
     for n, r in sorted(roster.items(), key=key):
         mark = r.get("mark", "")
-        lines.append(f"{mark}{n}（{r.get('spec', '')}）初:{r['first']}　最終:{r['last']}　{r['days']}日")
+        lines.append(f"{mark}{n}（{r.get('spec', '')}）初:{r['first']}　最終:{r['last']}")
     send(ROSTER_WEBHOOK, "\n".join(lines))
 
 
