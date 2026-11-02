@@ -110,7 +110,7 @@ def main():
     if date != state.get("date"):
         msgs.append(f"🟢 **【速報】本日の出勤メンバー**（{date}・{len(members)}名）\n")
         for n, m in members.items():
-            msgs.append(f"・{m.get('mark', '')}{n}（{spec(m)}）{hours(m)}")
+            msgs.append(f"{m.get('mark', '')}{n}（{spec(m)}）{hours(m)}")
     else:
         for n in members:
             if n not in old:
