@@ -66,11 +66,31 @@ def parse(content):
     return date, members
 
 
-def fmt(name, m):
-    s = f"・{m.get('mark', '')}{name}（{m['spec']}）{m['start']}〜{m['end']}"
+def hhmm(t):
+    m = re.match(r"(\d{1,2})時(半?)", t or "")
+    if not m:
+        return t or ""
+    return f"{int(m.group(1))}:{'30' if m.group(2) else '00'}"
+
+
+def hours(m):
+    s, e = hhmm(m["start"]), hhmm(m["end"])
+    if not e:
+        h = re.match(r"\d+", m["start"] or "")
+        if h and int(h.group()) >= 18:
+            e = "ラスト"
+    return f"{s} 〜 {e}".rstrip()
+
+
+def spec(m):
+    s = m["spec"]
     if m.get("tags"):
-        s += " " + m["tags"]
+        s += " / " + " / ".join(m["tags"].split())
     return s
+
+
+def news(emoji, title, name):
+    return f"{emoji} **【速報】{title}**\nキャスト名：{name}\n"
 
 
 def main():
@@ -88,22 +108,23 @@ def main():
     old = state.get("members", {})
     msgs = []
     if date != state.get("date"):
-        msgs.append(f"🟢 {date} 本日の出勤メンバー（{len(members)}名）")
-        msgs += [fmt(n, m) for n, m in members.items()]
+        msgs.append(f"🟢 **【速報】本日の出勤メンバー**（{date}・{len(members)}名）\n")
+        for n, m in members.items():
+            msgs.append(f"・{m.get('mark', '')}{n}（{spec(m)}）{hours(m)}")
     else:
         for n in members:
             if n not in old:
-                msgs.append("🚨 新規出勤エントリー\n" + fmt(n, members[n]) + "\n")
+                msgs.append(news("🚨", "出勤検知", n))
                 continue
             was = FULL in old[n].get("tags", "")
             now = FULL in members[n].get("tags", "")
             if now and not was:
-                msgs.append("🈵 満枠になりました\n" + fmt(n, members[n]) + "\n")
+                msgs.append(news("🈵", "満枠", n))
             elif was and not now:
-                msgs.append("🈳 満枠が解除されました\n" + fmt(n, members[n]) + "\n")
+                msgs.append(news("🈳", "満枠解除", n))
         for n in old:
             if n not in members:
-                msgs.append("⚠️ 出勤リストから外れました\n" + fmt(n, old[n]) + "\n")
+                msgs.append(news("⚠️", "出勤取り消し", n))
     if msgs:
         post("\n".join(msgs))
     state = {"updated_at": data.get("updated_at"), "date": date, "members": members}
