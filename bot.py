@@ -118,7 +118,15 @@ def post_roster(roster):
     send(ROSTER_WEBHOOK, "\n".join(lines))
 
 
-def update_roster(date, members):
+def recalc(r):
+    days = sorted(r.get("dates", []), key=date_key)
+    if days:
+        r["first"] = days[0]
+        r["last"] = days[-1]
+    r["days"] = len(days)
+
+
+def update_roster(today, members, removed):
     try:
         with open(ROSTER_FILE, encoding="utf-8") as f:
             roster = json.load(f)
@@ -127,17 +135,26 @@ def update_roster(date, members):
     changed = False
     for n, m in members.items():
         if n not in roster:
-            roster[n] = {"first": date, "last": date, "days": 1,
-                         "mark": m.get("mark", ""), "spec": m["spec"]}
+            roster[n] = {"first": today, "last": today, "days": 1,
+                         "dates": [today], "mark": m.get("mark", ""), "spec": m["spec"]}
             changed = True
         else:
             r = roster[n]
+            r.setdefault("dates", [r.get("first", today), r.get("last", today)])
             if r.get("mark") != m.get("mark", "") or r.get("spec") != m["spec"]:
                 changed = True
             r["mark"], r["spec"] = m.get("mark", ""), m["spec"]
-            if r["last"] != date:
-                r["last"] = date
-                r["days"] = r.get("days", 1) + 1
+            if today not in r["dates"]:
+                r["dates"].append(today)
+                recalc(r)
+                changed = True
+    for n in removed:
+        if n in roster:
+            r = roster[n]
+            r.setdefault("dates", [])
+            if today in r["dates"]:
+                r["dates"].remove(today)
+                recalc(r)
                 changed = True
     with open(ROSTER_FILE, "w", encoding="utf-8") as f:
         json.dump(roster, f, ensure_ascii=False, indent=2)
@@ -158,8 +175,9 @@ def main():
     if date is None or not members:
         return
     today = datetime.now(JST).strftime("%-m/%-d")
-    update_roster(today, members)
     old = state.get("members", {})
+    removed = [n for n in old if n not in members]
+    update_roster(today, members, removed)
     msgs = []
     if date != state.get("date"):
         msgs.append(f"🟢 **【速報】本日の出勤メンバー**（{date}・{len(members)}名）\n")
@@ -176,9 +194,8 @@ def main():
                 msgs.append(news("🈵", "満枠", n))
             elif was and not now:
                 msgs.append(news("🈳", "満枠解除", n))
-        for n in old:
-            if n not in members:
-                msgs.append(news("⚠️", "出勤取り消し", n))
+        for n in removed:
+            msgs.append(news("⚠️", "出勤取り消し", n))
     if msgs:
         send(WEBHOOK, "\n".join(msgs))
     state = {"updated_at": data.get("updated_at"), "date": date, "members": members}
