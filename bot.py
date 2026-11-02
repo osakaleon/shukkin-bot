@@ -1,4 +1,4 @@
-import json, os, re, urllib.request
+import json, os, re, time, urllib.request
 
 API_URL = "https://information-b.vercel.app/api/memo"
 WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
@@ -111,4 +111,10 @@ def main():
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-main()
+for i in range(5):
+    try:
+        main()
+    except Exception as e:
+        print("error:", e)
+    if i < 4:
+        time.sleep(60)
