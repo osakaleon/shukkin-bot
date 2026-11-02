@@ -25,4 +25,6 @@ jobs:
       - name: save state
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state.json roster.json || true
+          git diff --cached --quiet || (git commit -m "update state" && git push)
