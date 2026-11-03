@@ -14,6 +14,7 @@ MARKS = "★○☆◎●"
 FULL = "🈵"
 JST = timezone(timedelta(hours=9))
 RANK = {"★": 0, "☆": 1, "○": 2}
+NEW_RE = re.compile(r"^(\d{1,2}時半?)〜(ラスト|\d{1,2}時半?)[、,]\s*(.+)$")
 
 
 def get_json():
@@ -35,6 +36,45 @@ def send(hook, text):
             chunk = ""
         if line is not None:
             chunk += line + "\n"
+
+
+def hhmm(t):
+    m = re.match(r"(\d{1,2})時(半?)", t or "")
+    if not m:
+        return t or ""
+    return f"{int(m.group(1))}:{'30' if m.group(2) else '00'}"
+
+
+def spec_of(tokens):
+    nums = [t for t in tokens if t.isdigit()]
+    cups = [t for t in tokens if CUP_RE.fullmatch(t)]
+    parts = []
+    if nums:
+        parts.append(nums[0] + "cm")
+    parts += cups
+    return " / ".join(parts)
+
+
+def parse_newcomers(content):
+    news = {}
+    grab = False
+    for raw in content.splitlines():
+        line = raw.strip()
+        if "新人情報" in line:
+            grab = True
+            continue
+        if grab:
+            if DATE_RE.match(line):
+                break
+            m = NEW_RE.match(line)
+            if m:
+                start = hhmm(m.group(1))
+                end = "ラスト" if m.group(2) == "ラスト" else hhmm(m.group(2))
+                rest = m.group(3).split()
+                name = rest[0]
+                sp = spec_of(rest[1:])
+                news[name] = {"spec": sp, "hours": f"{start} 〜 {end}"}
+    return news
 
 
 def parse(content):
@@ -72,13 +112,6 @@ def parse(content):
     return date, members
 
 
-def hhmm(t):
-    m = re.match(r"(\d{1,2})時(半?)", t or "")
-    if not m:
-        return t or ""
-    return f"{int(m.group(1))}:{'30' if m.group(2) else '00'}"
-
-
 def hours(m):
     s, e = hhmm(m["start"]), hhmm(m["end"])
     if not e:
@@ -95,7 +128,7 @@ def spec(m):
     return s
 
 
-def news(emoji, title, name):
+def news_msg(emoji, title, name):
     return f"{emoji} **【速報】{title}**\nキャスト名：{name}\n"
 
 
@@ -172,34 +205,45 @@ def main():
         state = {}
     if data.get("updated_at") == state.get("updated_at"):
         return
-    date, members = parse(data.get("content", ""))
+    content = data.get("content", "")
+    date, members = parse(content)
+    newcomers = parse_newcomers(content)
     if date is None or not members:
         return
     today = datetime.now(JST).strftime("%-m/%-d")
     old = state.get("members", {})
     removed = [n for n in old if n not in members]
     update_roster(today, members, removed)
+    old_new = state.get("newcomers", {})
     msgs = []
     if date != state.get("date"):
         msgs.append(f"🟢 **【速報】本日の出勤メンバー**（{date}・{len(members)}名）\n")
         for n, m in members.items():
             msgs.append(f"{m.get('mark', '')}{n}（{spec(m)}）{hours(m)}")
+        if newcomers:
+            msgs.append("")
+            for n, nm in newcomers.items():
+                msgs.append(f"🆕 {n}（{nm['spec']}）{nm['hours']}")
     else:
         for n in members:
             if n not in old:
-                msgs.append(news("🚨", "出勤検知", n))
+                msgs.append(news_msg("🚨", "出勤検知", n))
                 continue
             was = FULL in old[n].get("tags", "")
             now = FULL in members[n].get("tags", "")
             if now and not was:
-                msgs.append(news("🈵", "満枠", n))
+                msgs.append(news_msg("🈵", "満枠", n))
             elif was and not now:
-                msgs.append(news("🈳", "満枠解除", n))
+                msgs.append(news_msg("🈳", "満枠解除", n))
         for n in removed:
-            msgs.append(news("⚠️", "出勤取り消し", n))
+            msgs.append(news_msg("⚠️", "出勤取り消し", n))
+        for n, nm in newcomers.items():
+            if n not in old_new:
+                msgs.append(f"🆕 **【速報】新人情報**\n{n}（{nm['spec']}）{nm['hours']}\n")
     if msgs:
         send(WEBHOOK, "\n".join(msgs))
-    state = {"updated_at": data.get("updated_at"), "date": date, "members": members}
+    state = {"updated_at": data.get("updated_at"), "date": date,
+             "members": members, "newcomers": newcomers}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
