@@ -1,12 +1,12 @@
 import json, os, re, time, urllib.request
 from datetime import datetime, timezone, timedelta
 
-API_URL = "https://information-b.vercel.app/api/memo"
+API_BASE = "https://information-b.vercel.app/api/memo"
 WEBHOOK = os.environ["DISCORD_WEBHOOK_URL"]
 ROSTER_WEBHOOK = os.environ.get("ROSTER_WEBHOOK_URL", "")
 STATE_FILE = "state.json"
 ROSTER_FILE = "roster.json"
-UA = {"User-Agent": "shukkin-bot/1.0"}
+UA = {"User-Agent": "shukkin-bot/1.0", "Cache-Control": "no-cache"}
 DATE_RE = re.compile(r"^(\d{1,2}/\d{1,2})$")
 TIME_RE = re.compile(r"^(\d{1,2}時半?)〜$")
 CUP_RE = re.compile(r"[A-Z]")
@@ -16,7 +16,8 @@ JST = timezone(timedelta(hours=9))
 RANK = {"★": 0, "☆": 1, "○": 2}
 
 
-def get_json(url):
+def get_json():
+    url = API_BASE + "?v=" + str(int(time.time() * 1000))
     req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode("utf-8"))
@@ -163,7 +164,7 @@ def update_roster(today, members, removed):
 
 
 def main():
-    data = get_json(API_URL)
+    data = get_json()
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
             state = json.load(f)
