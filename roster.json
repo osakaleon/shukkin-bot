@@ -260,20 +260,16 @@
   "ココ": {
     "first": "11/4",
     "last": "11/4",
-    "days": 1,
-    "dates": [
-      "11/4"
-    ],
+    "days": 0,
+    "dates": [],
     "mark": "☆",
     "spec": "154cm / B"
   },
   "ウキ": {
     "first": "11/4",
     "last": "11/4",
-    "days": 1,
-    "dates": [
-      "11/4"
-    ],
+    "days": 0,
+    "dates": [],
     "mark": "★",
     "spec": "153cm / C"
   },
